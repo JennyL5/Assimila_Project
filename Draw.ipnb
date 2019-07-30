@@ -1,0 +1,146 @@
+from ipyleaflet import (
+    Map,
+    Marker,
+    basemaps,
+    basemap_to_tiles,
+    TileLayer, ImageOverlay,
+    Polyline, Polygon, Rectangle, 
+    GeoJSON, WidgetControl, 
+    DrawControl, LayerGroup, FullScreenControl
+)
+
+from ipywidgets import IntSlider, ColorPicker, Button, link, Label
+
+#watercolor = basemap_to_tiles(basemaps.Stamen.Watercolor)
+m= Map(center=(10,0), zoom=2) #layout=dict(width='600px', height='400px')
+control = FullScreenControl()
+
+dc = DrawControl()
+dc.rectangle = {
+    'shapeOptions': {
+        'color': '#FF0000'}
+}
+dc.marker = {
+    "shapeOptions": {
+        "fillColor": "#fca45d",
+        "color": "#fca45d",
+        "fillOpacity": 1.0 }
+}
+
+dc.polyline={}
+dc.polygon={}
+dc.circlemarker={}
+
+# Create a group of layers and add it to the Map
+group = LayerGroup()
+m.add_layer(group)
+
+#given Africa: N: 38.25, S: -36.25, E: 53.25, W: -19.25
+africa = GeoJSON(data={'type': 'Feature', 'properties': {'name':"Africa", 'style': {'color': '#0000FF', 'clickable': True}}, 
+                       'geometry': {'type': 'Polygon', 'coordinates': [[[-19,38], [53, 38], [53, -36], [-19, -36]]]}},  
+                 hover_style={'fillColor': '03449e'})
+group.add_layer(africa)
+
+#given Colombia: N: 13.75, S: -5.25, E: -62.75, W: -83.25
+colombia = GeoJSON(data={'type': 'Feature', 'properties': {'name': "Colombia", 'style': {'color': '#0000FF', 'clickable': True}}, 
+                         'geometry': {'type': 'Polygon', 'coordinates': [[[-83,14], [-63, 14], [-63, -5], [-83, -5]]]}}, 
+                   hover_style={'fillColor': '03449e'})
+group.add_layer(colombia)
+
+
+def handle_draw(self, action, geo_json):
+    #print(action)
+    #print(geo_json)
+    s = geo_json.get('geometry','type')
+    t = s.get('type')
+    
+    if t == 'Point':
+        x, y = get_coords_point(self, action, geo_json)
+        point_check(self, x, y)
+    
+    if t == 'Polygon':
+        north, east, south, west = get_coords(self, action, geo_json)
+        polygon_check(self, north, east, south, west)  
+    
+def get_coords_point(self, action, geo_json):
+    coords = (geo_json.get('geometry', 'Point'))
+    x = coords.get('coordinates')[0]
+    y = coords.get('coordinates')[1]
+    print('X: %s, Y: %s'% (str(x), str(y)))
+    return x, y
+    
+def point_check(self, x, y):
+    #check it is within Africa N: 38.25, S: -36.25, E: 53.25, W: -19.25
+    if ((-36.25) < y < 38.25 and (-19.25) < x < 53.25):
+        africa_check = True
+    else:
+            africa_check = False
+    
+    #check it is within Colombia: N: 13.75, S: -5.25, E: -62.75, W: -83.25
+    if ((-5.25) < y < 13.75 and (-83.25) < x < 62.75):
+        columbia_check = True
+    else:
+            columbia_check = False
+
+    if columbia_check == False and africa_check == False:
+        raise ValueError ('Coordinates must be within the boxed boundaries.')
+    
+    
+def get_coords_polygon(self, action, geo_json): 
+    poly = (geo_json.get('geometry', 'Polygon'))
+    coords = poly.get('coordinates')[0]
+    SW = coords[0]
+    NW = coords[1]
+    NE = coords[2]
+    SE = coords[3]    
+    print('SW: %s, NW: %s, NE: %s, SE: %s' % (str(SW), str(NW), str(NE), str(SE)))
+    north = (NW[1] + NE[1])/2
+    east = (NE[0] + SE[0])/2
+    south = (SW[1] + SW [1])/2
+    west = (NW[0] + SW[0])/2
+    print ('North: %s, East: %s, South %s, West: %s' % (north, east, south, west))
+    return north, east, south, west
+
+
+def polygon_check(self, north, east, south, west):
+    #check it is within Africa N: 38.25, S: -36.25, E: 53.25, W: -19.25
+    if (north < 38.25 and east < 53.25 and south > (-36.25) and west > (-19.25)):
+        africa_check = True
+    else:
+            africa_check = False
+    
+    #check it is within Colombia: N: 13.75, S: -5.25, E: -62.75, W: -83.25
+    if (north < 13.75 and east < 62.75 and south > (-5.25) and west > (-83.25)):
+        columbia_check = True
+    else:
+            columbia_check = False
+    if columbia_check == False and africa_check == False:
+        raise ValueError ('Coordinates must be within the boxed boundaries.')
+        
+
+# mouse interaction handling
+label = Label()
+display(label)
+def handle_interaction(**kwargs):
+    if kwargs.get('type') == 'mousemove':
+        label.value = str(kwargs.get('coordinates'))
+m.on_interaction(handle_interaction)
+
+
+dc.on_draw(handle_draw)
+m.add_control(dc)
+m
+
+#m.interact(zoom=(0,10,1))
+
+from ipywidgets import IntSlider, ColorPicker, Button, link
+
+minimap = Map(
+    zoom_control=False, attribution_control=False, 
+    zoom=1, center=m.center, basemap=basemaps.Stamen.Terrain
+)
+minimap.layout.width = '250px'
+minimap.layout.height = '150px'
+link((minimap, 'center'), (m, 'center'))
+minimap_control = WidgetControl(widget=minimap, position='bottomleft')
+m.add_control(minimap_control)
