@@ -1,0 +1,716 @@
+from __future__ import print_function
+
+import sys
+sys.path.append("/workspace/PRISE")
+
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning)
+
+import matplotlib
+matplotlib.use('nbagg')
+import matplotlib.pyplot as plt
+import numpy as np
+import datetime
+import pandas as pd
+
+from traitlets import traitlets
+
+import ipywidgets as widgets
+from ipyleaflet import (
+    Map, Marker, basemaps, basemap_to_tiles,
+    TileLayer, ImageOverlay, Polyline, Polygon, Rectangle,
+    GeoJSON, WidgetControl, DrawControl, LayerGroup, FullScreenControl, interactive
+)
+from IPython.display import display, clear_output
+from IPython.lib.display import FileLink
+
+from src.DQclient import AssimilaData
+from src.datacube.dq_database.dq_db_connect import DqDbConnection
+from src.datacube.dq_database.db_view import DQDataBaseView
+
+dqbv = DQDataBaseView()
+
+
+class Helpers:
+
+    def __init__(self, out):
+
+        self.out = out
+        self.http_client = AssimilaData(".assimila_dq")
+
+    def get_data_from_datacube(self, product, subproduct, start, end,
+                               latitude, longitude):
+
+        res = self.http_client.get(
+            {'command': 'GET_DATA',
+             'product_metadata': {'product': product,
+                                  'subproduct': [subproduct],
+                                  'lon': longitude,
+                                  'lat': latitude,
+                                  'start_date': np.datetime64(start),
+                                  'end_date': np.datetime64(end)}})
+
+        return res[0]
+
+
+    def check(self, north, east, south, west, start, end):
+        if str(end) < str(start):
+            raise ValueError('End date should not be before start date')
+
+        if east != None and west != None and east < west:
+            raise ValueError('East value should be greater than west')
+
+        if north != None and south != None and north < south:
+            raise ValueError('North value should be greater than south')
+
+
+
+
+    def get_data_from_datacube_nesw(self, product, subproduct, north, east, south, west, start, end):
+
+        with self.out:
+            clear_output()
+            print("Getting data...")
+
+            res = self.http_client.get(
+                {'command':'GET_DATA',
+                 'product_metadata' : {'product':product,
+                                       'subproduct': [subproduct],
+                                       'north': north,
+                                       'east': east,
+                                       'south': south,
+                                       'west': west,
+                                       'start_date': start,
+                                       'end_date': end,
+                                       }})
+        return res[0]
+
+
+    def color_map_nesw(self, product, subproduct, north, east, south, west, date, hour):
+
+        with self.out:
+            clear_output()
+            print("Getting data...")
+
+            # to get date
+            d = date.value
+            x = d.strftime("%Y-%m-%d ")
+
+            # to get hour
+            h = hour.value
+            if h < 10:
+                y = ("0" + str(h) + ":00:00")
+            else:
+                y = (str(h) + ":00:00")
+
+            # concatenation + ""
+            start = " \"" + x + y + "\""
+            end = " \"" + x + y + "\""
+
+            Helpers.check(self, north, east, south, west, start, end)
+
+            list_of_results = Helpers.get_data_from_datacube_nesw(self, product, subproduct,
+                                                            north, east, south, west,
+                                                            start, end)
+
+            y = list_of_results
+            y.__getitem__(subproduct).plot()
+            plt.show()
+
+    def color_map_nesw_compare(self, product, subproduct, north, east, south, west, date1, hour1, date2, hour2):
+
+        with self.out:
+            clear_output()
+            print("Getting data...")
+
+            # to get date
+            d = date1.value
+            x1 = d.strftime("%Y-%m-%d ")
+
+            # to get hour
+            h = hour1.value
+            if h < 10:
+                y1 = ("0" + str(h) + ":00:00")
+            else:
+                y1 = (str(h) + ":00:00")
+
+            d = date2.value
+            x2 = d.strftime("%Y-%m-%d ")
+
+            # to get hour
+            h = hour2.value
+            if h < 10:
+                y2 = ("0" + str(h) + ":00:00")
+            else:
+                y2 = (str(h) + ":00:00")
+
+            # concatenation + ""
+            start1 = " \"" + x1 + y1 + "\""
+            end1 = " \"" + x1 + y1 + "\""
+
+            # concatenation + ""
+            start2 = " \"" + x2 + y2 + "\""
+            end2 = " \"" + x2 + y2 + "\""
+
+            Helpers.check(self, north, east, south, west, start1, end1)
+            Helpers.check(self, north, east, south, west, start2, end2)
+
+            list_of_results1 = Helpers.get_data_from_datacube_nesw(self, product, subproduct,
+                                                                   north, east, south, west,
+                                                                   start1, end1)
+            y1 = list_of_results1
+
+            list_of_results2 = Helpers.get_data_from_datacube_nesw(self, product, subproduct,
+                                                                   north, east, south, west,
+                                                                   start2, end2)
+
+            y2 = list_of_results2
+
+            fig, axs = plt.subplots(1, 2, figsize=(9, 4))
+            y1.__getitem__(subproduct).plot(ax=axs[0])
+            y2.__getitem__(subproduct).plot(ax=axs[1])
+            plt.tight_layout()
+            plt.show()
+
+    def prepare_map(dc, m):
+        dc.rectangle = {'shapeOptions': {'color': '#FF0000'}}
+        dc.marker = {"shapeOptions": {"fillColor": "#fca45d", "color": "#fca45d", "fillOpacity": 1.0}}
+        dc.polyline = {}
+        dc.polygon = {}
+        dc.circlemarker = {}
+
+        # Create a group of layers and add it to the Map
+        group = LayerGroup()
+        m.add_layer(group)
+
+        # given Africa: N: 38.25, S: -36.25, E: 53.25, W: -19.25
+        africa = GeoJSON(
+            data={'type': 'Feature', 'properties': {'name': "Africa", 'style': {'color': '#0000FF', 'clickable': True}},
+                  'geometry': {'type': 'Polygon', 'coordinates': [[[-19, 38], [53, 38], [53, -36], [-19, -36]]]}},
+            hover_style={'fillColor': '03449e'})
+        group.add_layer(africa)
+
+        # given Colombia: N: 13.75, S: -5.25, E: -62.75, W: -83.25
+        colombia = GeoJSON(data={'type': 'Feature',
+                                 'properties': {'name': "Colombia", 'style': {'color': '#0000FF', 'clickable': True}},
+                                 'geometry': {'type': 'Polygon',
+                                              'coordinates': [[[-83, 14], [-63, 14], [-63, -5], [-83, -5]]]}},
+                           hover_style={'fillColor': '03449e'})
+        group.add_layer(colombia)
+
+    def mouse_interaction(m, label):
+        def handle_interaction(**kwargs):
+            if kwargs.get('type') == 'mousemove':
+                label.value = str(kwargs.get('coordinates'))
+        m.on_interaction(handle_interaction)
+        display(label)
+
+    def compare_rfe_skt_time(self, longitude, latitude, start, end):
+        Helpers.check(self, None, None, None, None, start, end)
+
+        with self.out:
+            clear_output()
+            print("Getting data...")
+
+            # temperature
+            list_of_results = self.get_data_from_datacube('era5', 'skt', start, end, latitude, longitude)
+            x = list_of_results.skt - 273.15
+
+            # rainfall
+            list_of_results = self.get_data_from_datacube('tamsat', 'rfe', start, end, latitude, longitude)
+            y = list_of_results.rfe
+
+            fig, ax1 = plt.subplots()
+
+            color = 'tab:red'
+            ax1.set_xlabel('time')
+            ax1.set_ylabel('skt', color=color)
+            ax1.tick_params(axis='y', labelcolor=color)
+            ax1.set_title("")
+            x.plot(ax=ax1, color=color)
+            plt.title('rfe and skt against time')
+
+            ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+            color = 'tab:blue'
+            ax2.set_ylabel('rfe', color=color)
+            ax2.tick_params(axis='y', labelcolor=color)
+            y.plot(ax=ax2, color=color)
+            plt.title('rfe and skt against time')
+
+            fig.tight_layout()  # otherwise the right y-label is slightly clipped
+            plt.show()
+
+    def compare_rfe_skt_time(self, longitude, latitude, start, end):
+        Helpers.check(self, None, None, None, None, start, end)
+
+        with self.out:
+            clear_output()
+            print("Getting data...")
+
+            # temperature
+            list_of_results = self.get_data_from_datacube('era5', 'skt', start, end, latitude, longitude)
+            x = list_of_results.skt - 273.15
+
+            # rainfall
+            list_of_results = self.get_data_from_datacube('tamsat', 'rfe', start, end, latitude, longitude)
+            y = list_of_results.rfe
+
+            fig, ax1 = plt.subplots()
+
+            color = 'tab:red'
+            ax1.set_xlabel('time')
+            ax1.set_ylabel('skt', color=color)
+            ax1.tick_params(axis='y', labelcolor=color)
+            ax1.set_title("")
+            x.plot(ax=ax1, color=color)
+            plt.title('rfe and skt against time')
+
+            ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+            color = 'tab:blue'
+            ax2.set_ylabel('rfe', color=color)
+            ax2.tick_params(axis='y', labelcolor=color)
+            y.plot(ax=ax2, color=color)
+            plt.title('rfe and skt against time')
+
+            fig.tight_layout()  # otherwise the right y-label is slightly clipped
+            plt.show()
+
+    def compare_rainfall_products(self, latitude, longitude, start, end):
+
+        with self.out:
+
+            clear_output()
+            print("Getting data...")
+
+            p1 = self.get_data_from_datacube('tamsat',
+                                             'rfe',
+                                             np.datetime64(start),
+                                             np.datetime64(end),
+                                             latitude,
+                                             longitude)
+
+            p2 = self.get_data_from_datacube('chirps',
+                                             'rfe',
+                                             np.datetime64(start),
+                                             np.datetime64(end),
+                                             latitude,
+                                             longitude)
+
+            plt.figure(figsize=(8, 6))
+
+            p1.rfe.plot(label='TAMSAT')
+            p2.rfe.plot(label='CHIRPS')
+
+            plt.legend()
+            plt.show()
+    
+    def compare_temperature_subproducts(self, latitude, longitude, start, end):
+
+        with self.out:
+
+            clear_output()
+            print("Getting data...")
+
+            p1 = self.get_data_from_datacube('era5',
+                                             'skt',
+                                             np.datetime64(start),
+                                             np.datetime64(end),
+                                             latitude,
+                                             longitude)
+
+            p2 = self.get_data_from_datacube('era5',
+                                             't2m',
+                                             np.datetime64(start),
+                                             np.datetime64(end),
+                                             latitude,
+                                             longitude)
+
+            plt.figure(figsize=(8, 6))
+
+            p1.rfe.plot(label='skt')
+            p2.rfe.plot(label='t2m')
+
+            plt.legend()
+            plt.show()
+
+    def compare_rainfall_years(self, product, latitude, longitude,
+                               year1, year2):
+
+        with self.out:
+
+            clear_output()
+            print("Getting data...")
+
+            product_name = product.lower()
+
+            y1 = self.get_data_from_datacube(
+                product_name,
+                'rfe',
+                np.datetime64(f"{int(year1)}-01-01"),
+                np.datetime64(f"{int(year1)}-12-31"),
+                latitude,
+                longitude).groupby('time.dayofyear').mean()
+
+            y2 = self.get_data_from_datacube(
+                product_name,
+                'rfe',
+                np.datetime64(f"{int(year2)}-01-01"),
+                np.datetime64(f"{int(year2)}-12-31"),
+                latitude,
+                longitude).groupby('time.dayofyear').mean()
+
+            plt.figure(figsize=(8, 6))
+
+            y1.rfe.plot(label=int(year1))
+            y2.rfe.plot(label=int(year2))
+
+            plt.legend()
+            plt.show()
+            
+    def compare_temperature_years(self, product, latitude, longitude, year1, year2):
+        with self.out:
+            
+            clear_output()
+            print("Getting data...")
+            
+            product_name = product.lower()
+
+            y1 = self.get_data_from_datacube(
+                product_name,
+                'skt',
+                np.datetime64(f"{int(year1)}-01-01"),
+                np.datetime64(f"{int(year1)}-12-31"),
+                latitude,
+                longitude).groupby('time.dayofyear').mean()
+
+            y2 = self.get_data_from_datacube(
+                product_name,
+                'skt',
+                np.datetime64(f"{int(year2)}-01-01"),
+                np.datetime64(f"{int(year2)}-12-31"),
+                latitude,
+                longitude).groupby('time.dayofyear').mean()
+
+            plt.figure(figsize=(8, 6))
+
+            y1.skt.plot(label=int(year1))
+            y2.skt.plot(label=int(year2))
+
+            plt.legend()
+            plt.show()
+
+    def data_to_csv(self, product, subproduct,
+                    latitude, longitude, start, end):
+
+        with self.out:
+
+            clear_output()
+            print("Getting data...")
+
+            data = self.get_data_from_datacube(product,
+                                               subproduct,
+                                               np.datetime64(start),
+                                               np.datetime64(end),
+                                               latitude,
+                                               longitude)
+
+            st = pd.to_datetime(start)
+            en = pd.to_datetime(end)
+
+            filename = f"{product}_{subproduct}_{latitude}_{longitude}" \
+                       f"_{st.date()}_{en.date()}.csv"
+            data.to_dataframe().to_csv(filename)
+            localfile = FileLink(filename)
+            display(localfile)
+
+            plt.figure(figsize=(8, 6))
+            data.__getitem__(subproduct).plot()
+            plt.show()
+
+    def plot_rainfall_year_vs_climatology(self, product, latitude, longitude,
+                                          start, end):
+
+        with self.out:
+
+            clear_output()
+            print("1/3 Getting data for request year...")
+
+            product_name = product.lower()
+
+            y1 = self.get_data_from_datacube(
+                product_name,
+                'rfe',
+                np.datetime64(start),
+                np.datetime64(end),
+                latitude,
+                longitude).groupby('time.dayofyear').mean()
+
+            print("2/3 Calculating climatology...")
+
+            clim = self.get_data_from_datacube(
+                product_name,
+                'rfe',
+                np.datetime64(f"2000-01-01"),
+                np.datetime64(f"2019-12-31"),
+                latitude,
+                longitude)
+
+            std = clim.groupby("time.dayofyear").std()
+            mean = clim.groupby("time.dayofyear").mean()
+
+            print("3/3 Plotting data")
+
+            mean = mean.sel(dayofyear=slice(mean.dayofyear.values.min(),
+                                            mean.dayofyear.values.max()))
+
+            std = std.sel(dayofyear=slice(std.dayofyear.values.min(),
+                                          std.dayofyear.values.max()))
+
+            std_min = mean - std
+            std_min.rfe.values[std_min.rfe.values < 0] = 0
+
+            plt.figure(figsize=(8, 6))
+
+            y1.rfe.plot(label="2018")
+
+            mean.rfe.plot(label="Climatology", color='gray', alpha=0.6)
+            plt.fill_between(mean.dayofyear.values,
+                             (mean + std).rfe.values,
+                             std_min.rfe.values,
+                             color='Grey', alpha=0.3)
+
+            plt.legend()
+            plt.show()
+
+    def calculate_degree_days(self, latitude, longitude, start, end, lower,
+                              upper):
+
+        with self.out:
+
+            clear_output()
+            print("1/3 Getting data...")
+
+            temp = self.get_data_from_datacube(
+                'era5',
+                'skt',
+                np.datetime64(start),
+                np.datetime64(end+datetime.timedelta(hours=23)),
+                latitude,
+                longitude).skt - 273.15
+
+            print("2/3 Calculating degree days...")
+
+            temp.values[temp.values > upper] = upper
+            temp.values[temp.values < lower] = lower
+            temp.values = (temp.values - lower) / 24
+            temp = temp.resample(time="1D").sum()
+
+            temp.plot()
+            plt.show()
+
+
+class Widgets:
+
+    def __init__(self):
+
+        self.db_conn = DqDbConnection()
+        self.db_conn.connect()
+        self.dqbv = DQDataBaseView()
+
+        self.item_layout = widgets.Layout(height='30px', width='400px')
+
+    def get_lat_lon_widgets(self):
+
+        return self.latitude(), self.longitude()
+    
+    def get_product_widgets(self):
+        
+        return self.product()
+
+    def longitude(self):
+
+        return widgets.BoundedFloatText(value=7.5,
+                                        min=-180,
+                                        max=180.0,
+                                        step=0.0001,
+                                        description='Longitude (x):',
+                                        disabled=False,
+                                        layout=self.item_layout)
+
+    def latitude(self):
+
+        return widgets.BoundedFloatText(value=7.5,
+                                        min=-90.0,
+                                        max=90.0,
+                                        step=0.0001,
+                                        description='Latitude (y):',
+                                        disabled=False,
+                                        layout=self.item_layout)
+
+
+    def get_north(self):
+        return widgets.BoundedFloatText(value=38, min=-90, max=90, description="North: ", layout=self.item_layout, disabled=False, readout=True, readout_format='d')
+
+    def get_east(self):
+        return widgets.BoundedFloatText(value=53, min=-180, max=180, description="East: ", layout=self.item_layout, disabled=False, readout=True, readout_format='d')
+
+    def get_south(self):
+        return widgets.BoundedFloatText(value=(-36), min=-90, max=90, description="South: ", layout=self.item_layout, disabled=False, readout=True, readout_format='d')
+
+    def get_west(self):
+        return widgets.BoundedFloatText(value=(-19), min=-180, max=180, description="West: ", layout=self.item_layout, disabled=False, readout=True, readout_format='d')
+
+
+    def product(self):
+
+        return widgets.Dropdown(
+            options=self.db_conn.get_df("SELECT name from PRODUCT").name,
+            description='Product:',
+            layout=self.item_layout,
+            disabled=False, )
+
+    def get_all_products(self):
+        return widgets.Dropdown(options=['era5', 'tamsat', 'chirps'],
+                                description='Product:',
+                                layout=self.item_layout,
+                                disabled=False, )
+
+
+    def subproduct(self):
+
+        return widgets.Dropdown(description="Subproduct:",
+                                layout=self.item_layout)
+
+    def rainfall_products(self):
+
+        return widgets.Dropdown(options=['TAMSAT', 'CHIRPS'],
+                                description='Product:',
+                                layout=self.item_layout,
+                                disabled=False, )
+    
+    def temperature_products(self):
+        
+        return widgets.Dropdown(options=['skt'],
+                                description='Product:',
+                                layout=self.item_layout,
+                                disabled=False, )
+    def get_year_widgets(self):
+
+        y1 = widgets.BoundedFloatText(value=2018, min=2000, max=2019, step=1,
+                                      description='Year 1 :', disabled=False,
+                                      layout=self.item_layout)
+
+        y2 = widgets.BoundedFloatText(value=2019, min=2000, max=2019, step=1,
+                                      description='Year 2 :', disabled=False,
+                                      layout=self.item_layout)
+
+        return y1, y2
+
+    def get_date(self):
+        return widgets.DatePicker(description='Date: ', layout=self.item_layout, value=datetime.datetime(2018,1,1), disabled=False)
+
+    def get_date1(self):
+        return widgets.DatePicker(description='Date 1: ', layout=self.item_layout, value=datetime.datetime(2018,1,1), disabled=False)
+
+    def get_date2(self):
+        return widgets.DatePicker(description='Date 2: ', layout=self.item_layout, value=datetime.datetime(2018,1,1), disabled=False)
+
+    def get_hour(self):
+        return widgets.IntSlider(description='Hour: ', layout=self.item_layout, value='00', disabled=False, min='00', max='23')
+
+    def get_hour1(self):
+        return widgets.IntSlider(description='Hour 1: ', layout=self.item_layout, value='00', disabled=False, min='00', max='23')
+
+    def get_hour2(self):
+        return widgets.IntSlider(description='Hour 2: ', layout=self.item_layout, value='00', disabled=False, min='00', max='23')
+
+    def get_date_widgets(self):
+
+        return self.start_date(), self.end_date()
+
+    def start_date(self):
+
+        return widgets.DatePicker(description='Start Date: ',
+                                  layout=self.item_layout,
+                                  value=datetime.datetime(2000, 1, 1),
+                                  disabled=False)
+
+    def end_date(self):
+        return widgets.DatePicker(description='EndDate: ',
+                                  layout=self.item_layout,
+                                  value=datetime.datetime(2000, 2, 1),
+                                  disabled=False)
+
+    def degree_day_threshold(self, min_val, max_val, value, string):
+        return widgets.BoundedFloatText(value=value,
+                                        min=min_val,
+                                        max=max_val,
+                                        step=0.0001,
+                                        description=string,
+                                        disabled=False,
+                                        layout=self.item_layout)
+
+    def set_up_button(self, method):
+
+        button = LoadedButton(description="Get Data",
+                              layout=self.item_layout)
+
+        button.on_click(method)
+        button.button_style = 'primary'
+
+        return button
+
+    @staticmethod
+    def display_widget(widget_list):
+
+        for w in widget_list:
+            display(w)
+
+    @staticmethod
+    def display_widgets(product, subproduct, north, east, south, west, date, hour, button, m):
+        from ipywidgets import HBox, VBox
+
+        # for w in widget_list:
+        #     display(w)
+        box1 = VBox([product, subproduct, north, east, south, west, date, hour, button])
+        box2 = HBox([box1, m])
+        box_layout = widgets.Layout(
+            display='flex',
+            flex_flow='row',
+            align_items='stretch',
+            width='100%')
+        display(box2)
+
+    @staticmethod
+    def display_widget_comparison(product, subproduct, north, east, south, west, date1, hour1, date2, hour2, button, m):
+        from ipywidgets import HBox, VBox
+
+        # for w in widget_list:
+        #     display(w)
+        box1 = VBox([product, subproduct, north, east, south, west, date1, hour1, date2, hour2, button])
+        box2 = HBox([box1, m])
+        box_layout = widgets.Layout(
+            display='flex',
+            flex_flow='row',
+            align_items='stretch',
+            width='100%')
+        display(box2)
+
+    @staticmethod
+    def display_output():
+
+        out = widgets.Output()
+        display(out)
+        return out
+
+    def get_subproduct_list(self, product):
+
+        return self.dqbv.get_subproducts_from_product_name(product)
+
+
+class LoadedButton(widgets.Button):
+    """A button that can holds a value as a attribute."""
+
+    def __init__(self, value=None, *args, **kwargs):
+        super(LoadedButton, self).__init__(*args, **kwargs)
+        self.add_traits(value=traitlets.Any(value))
