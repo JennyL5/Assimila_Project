@@ -47,11 +47,10 @@ class Helpers:
                                   'subproduct': [subproduct],
                                   'lon': longitude,
                                   'lat': latitude,
-                                  'start_date': np.datetime64(start),
-                                  'end_date': np.datetime64(end)}})
+                                  'start_date': start,
+                                  'end_date': end}})
 
         return res[0]
-
 
     def check(self, north, east, south, west, start, end):
         if str(end) < str(start):
@@ -62,9 +61,6 @@ class Helpers:
 
         if north != None and south != None and north < south:
             raise ValueError('North value should be greater than south')
-
-
-
 
     def get_data_from_datacube_nesw(self, product, subproduct, north, east, south, west, start, end):
 
@@ -85,27 +81,14 @@ class Helpers:
                                        }})
         return res[0]
 
-
     def color_map_nesw(self, product, subproduct, north, east, south, west, date, hour):
 
         with self.out:
             clear_output()
             print("Getting data...")
 
-            # to get date
-            d = date.value
-            x = d.strftime("%Y-%m-%d ")
-
-            # to get hour
-            h = hour.value
-            if h < 10:
-                y = ("0" + str(h) + ":00:00")
-            else:
-                y = (str(h) + ":00:00")
-
-            # concatenation + ""
-            start = " \"" + x + y + "\""
-            end = " \"" + x + y + "\""
+            start = Helpers.combine_date_hour(self, date, hour)
+            end = Helpers.combine_date_hour(self, date, hour)
 
             Helpers.check(self, north, east, south, west, start, end)
 
@@ -123,34 +106,10 @@ class Helpers:
             clear_output()
             print("Getting data...")
 
-            # to get date
-            d = date1.value
-            x1 = d.strftime("%Y-%m-%d ")
-
-            # to get hour
-            h = hour1.value
-            if h < 10:
-                y1 = ("0" + str(h) + ":00:00")
-            else:
-                y1 = (str(h) + ":00:00")
-
-            d = date2.value
-            x2 = d.strftime("%Y-%m-%d ")
-
-            # to get hour
-            h = hour2.value
-            if h < 10:
-                y2 = ("0" + str(h) + ":00:00")
-            else:
-                y2 = (str(h) + ":00:00")
-
-            # concatenation + ""
-            start1 = " \"" + x1 + y1 + "\""
-            end1 = " \"" + x1 + y1 + "\""
-
-            # concatenation + ""
-            start2 = " \"" + x2 + y2 + "\""
-            end2 = " \"" + x2 + y2 + "\""
+            start1 = Helpers.combine_date_hour(self, date1, hour1)
+            end1 = Helpers.combine_date_hour(self, date1, hour1)
+            start2 = Helpers.combine_date_hour(self, date2, hour2)
+            end2 = Helpers.combine_date_hour(self, date2, hour2)
 
             Helpers.check(self, north, east, south, west, start1, end1)
             Helpers.check(self, north, east, south, west, start2, end2)
@@ -198,47 +157,23 @@ class Helpers:
                            hover_style={'fillColor': '03449e'})
         group.add_layer(colombia)
 
+    def get_coords_point(self, action, geo_json):
+        coords = (geo_json.get('geometry', 'Point'))
+        x = coords.get('coordinates')[0]
+        y = coords.get('coordinates')[1]
+        north = y
+        south = y
+        east = x
+        west = x
+        print('North: %s, East: %s, South %s, West: %s' % (north, east, south, west))
+        return north, east, south, west
+
     def mouse_interaction(m, label):
         def handle_interaction(**kwargs):
             if kwargs.get('type') == 'mousemove':
                 label.value = str(kwargs.get('coordinates'))
         m.on_interaction(handle_interaction)
         display(label)
-
-    def compare_rfe_skt_time(self, longitude, latitude, start, end):
-        Helpers.check(self, None, None, None, None, start, end)
-
-        with self.out:
-            clear_output()
-            print("Getting data...")
-
-            # temperature
-            list_of_results = self.get_data_from_datacube('era5', 'skt', start, end, latitude, longitude)
-            x = list_of_results.skt - 273.15
-
-            # rainfall
-            list_of_results = self.get_data_from_datacube('tamsat', 'rfe', start, end, latitude, longitude)
-            y = list_of_results.rfe
-
-            fig, ax1 = plt.subplots()
-
-            color = 'tab:red'
-            ax1.set_xlabel('time')
-            ax1.set_ylabel('skt', color=color)
-            ax1.tick_params(axis='y', labelcolor=color)
-            ax1.set_title("")
-            x.plot(ax=ax1, color=color)
-            plt.title('rfe and skt against time')
-
-            ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
-            color = 'tab:blue'
-            ax2.set_ylabel('rfe', color=color)
-            ax2.tick_params(axis='y', labelcolor=color)
-            y.plot(ax=ax2, color=color)
-            plt.title('rfe and skt against time')
-
-            fig.tight_layout()  # otherwise the right y-label is slightly clipped
-            plt.show()
 
     def compare_rfe_skt_time(self, longitude, latitude, start, end):
         Helpers.check(self, None, None, None, None, start, end)
@@ -508,6 +443,61 @@ class Helpers:
             temp.plot()
             plt.show()
 
+    def combine_date_hour(self, date, hour):
+        # to get start date and hour
+        d = date.value
+        x = d.strftime("%Y-%m-%d ")
+        h = hour.value
+        if h < 10:
+            y = ("0" + str(h) + ":00:00")
+        else:
+            y = (str(h) + ":00:00")
+        start = "\"" + x + y + "\""
+
+        # to get end date and hour
+        d = date.value
+        x = d.strftime("%Y-%m-%d ")
+        h = hour.value
+        if h < 10:
+            y = ("0" + str(h) + ":00:00")
+        else:
+            y = (str(h) + ":00:00")
+        return "\"" + x + y + "\""
+
+    def compare_two_locations(self, product, subproduct, lat1, lon1, lat2, lon2, start_date, start_hour, end_date, end_hour):
+
+        with self.out:
+            clear_output()
+            print("Getting data...")
+
+            # to get start date and hour
+            start = Helpers.combine_date_hour(self, start_date, start_hour)
+
+            # to get end date and hour
+            end = Helpers.combine_date_hour(self, end_date, end_hour)
+
+            fig, ax1 = plt.subplots(figsize=(8, 4))
+
+            #latlon1
+            list_of_results = Helpers.get_data_from_datacube(self, product, subproduct, start, end, lat1, lon1,)
+            x = list_of_results
+            x.__getitem__(subproduct).plot(label=(lat1, lon1))
+
+            #latlon2
+            list_of_results = Helpers.get_data_from_datacube(self, product, subproduct, start, end, lat2, lon2,)
+            y = list_of_results
+            y.__getitem__(subproduct).plot(label=(lat2, lon2))
+
+            list_x = x.__getitem__(subproduct).values
+            list_y = y.__getitem__(subproduct).values
+            max_val = max([list_x.max(), list_y.max()]) + 2
+            min_val = min([list_x.min(), list_y.min()]) - 2
+
+            plt.title('comparing two locations')
+            plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
+            ax1.set_ylim([min_val, max_val])
+            fig.tight_layout()  # otherwise the right y-label is slightly clipped
+            plt.show()
 
 class Widgets:
 
@@ -547,19 +537,8 @@ class Widgets:
                                         disabled=False,
                                         layout=self.item_layout)
 
-
-    def get_north(self):
-        return widgets.BoundedFloatText(value=38, min=-90, max=90, description="North: ", layout=self.item_layout, disabled=False, readout=True, readout_format='d')
-
-    def get_east(self):
-        return widgets.BoundedFloatText(value=53, min=-180, max=180, description="East: ", layout=self.item_layout, disabled=False, readout=True, readout_format='d')
-
-    def get_south(self):
-        return widgets.BoundedFloatText(value=(-36), min=-90, max=90, description="South: ", layout=self.item_layout, disabled=False, readout=True, readout_format='d')
-
-    def get_west(self):
-        return widgets.BoundedFloatText(value=(-19), min=-180, max=180, description="West: ", layout=self.item_layout, disabled=False, readout=True, readout_format='d')
-
+    def get_point(self, value, description):
+        return widgets.BoundedFloatText(value=(value), min=-180, max=180, description=description, layout=self.item_layout, disabled=False, readout=True, readout_format='d')
 
     def product(self):
 
@@ -574,7 +553,6 @@ class Widgets:
                                 description='Product:',
                                 layout=self.item_layout,
                                 disabled=False, )
-
 
     def subproduct(self):
 
@@ -594,6 +572,7 @@ class Widgets:
                                 description='Product:',
                                 layout=self.item_layout,
                                 disabled=False, )
+
     def get_year_widgets(self):
 
         y1 = widgets.BoundedFloatText(value=2018, min=2000, max=2019, step=1,
@@ -606,40 +585,11 @@ class Widgets:
 
         return y1, y2
 
-    def get_date(self):
-        return widgets.DatePicker(description='Date: ', layout=self.item_layout, value=datetime.datetime(2018,1,1), disabled=False)
+    def get_date(self, value, description):
+        return widgets.DatePicker(description=description, layout=self.item_layout, value=value, disabled=False)
 
-    def get_date1(self):
-        return widgets.DatePicker(description='Date 1: ', layout=self.item_layout, value=datetime.datetime(2018,1,1), disabled=False)
-
-    def get_date2(self):
-        return widgets.DatePicker(description='Date 2: ', layout=self.item_layout, value=datetime.datetime(2018,1,1), disabled=False)
-
-    def get_hour(self):
-        return widgets.IntSlider(description='Hour: ', layout=self.item_layout, value='00', disabled=False, min='00', max='23')
-
-    def get_hour1(self):
-        return widgets.IntSlider(description='Hour 1: ', layout=self.item_layout, value='00', disabled=False, min='00', max='23')
-
-    def get_hour2(self):
-        return widgets.IntSlider(description='Hour 2: ', layout=self.item_layout, value='00', disabled=False, min='00', max='23')
-
-    def get_date_widgets(self):
-
-        return self.start_date(), self.end_date()
-
-    def start_date(self):
-
-        return widgets.DatePicker(description='Start Date: ',
-                                  layout=self.item_layout,
-                                  value=datetime.datetime(2000, 1, 1),
-                                  disabled=False)
-
-    def end_date(self):
-        return widgets.DatePicker(description='EndDate: ',
-                                  layout=self.item_layout,
-                                  value=datetime.datetime(2000, 2, 1),
-                                  disabled=False)
+    def get_hour(self, value, description):
+        return widgets.IntSlider(description=description, layout=self.item_layout, value=value, disabled=False, min='00', max='23')
 
     def degree_day_threshold(self, min_val, max_val, value, string):
         return widgets.BoundedFloatText(value=value,
@@ -654,7 +604,6 @@ class Widgets:
 
         button = LoadedButton(description="Get Data",
                               layout=self.item_layout)
-
         button.on_click(method)
         button.button_style = 'primary'
 
