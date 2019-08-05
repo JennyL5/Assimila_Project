@@ -165,8 +165,33 @@ class Helpers:
         south = y
         east = x
         west = x
-        print('North: %s, East: %s, South %s, West: %s' % (north, east, south, west))
         return north, east, south, west
+
+    def get_coords_polygon(self, action, geo_json):
+        poly = (geo_json.get('geometry', 'Polygon'))
+        coords = poly.get('coordinates')[0]
+        SW = coords[0]
+        NW = coords[1]
+        NE = coords[2]
+        SE = coords[3]
+        #print('SW: %s, NW: %s, NE: %s, SE: %s' % (str(SW), str(NW), str(NE), str(SE)))
+        north = (NW[1] + NE[1]) / 2
+        east = (NE[0] + SE[0]) / 2
+        south = (SW[1] + SW[1]) / 2
+        west = (NW[0] + SW[0]) / 2
+        return north, east, south, west
+
+    def update_nesw(x):
+        def create_wid(a):
+                w.observe(on_change)
+                return a
+        w = interactive(create_wid, a = x)
+        def on_change(change):
+            if change['type'] == 'change' and change['name'] == 'value':
+                x.value = change['new']
+                #print(x.value)
+        w.observe(on_change)
+        return w
 
     def mouse_interaction(m, label):
         def handle_interaction(**kwargs):
@@ -425,6 +450,7 @@ class Helpers:
             clear_output()
             print("1/3 Getting data...")
 
+
             temp = self.get_data_from_datacube(
                 'era5',
                 'skt',
@@ -655,6 +681,23 @@ class Widgets:
     def get_subproduct_list(self, product):
 
         return self.dqbv.get_subproducts_from_product_name(product)
+
+    def get_date_widgets(self):
+
+        return self.start_date(), self.end_date()
+
+    def start_date(self):
+
+        return widgets.DatePicker(description='Start Date: ',
+                                  layout=self.item_layout,
+                                  value=datetime.datetime(2000, 1, 1),
+                                  disabled=False)
+
+    def end_date(self):
+        return widgets.DatePicker(description='EndDate: ',
+                                  layout=self.item_layout,
+                                  value=datetime.datetime(2000, 2, 1),
+                                  disabled=False)
 
 
 class LoadedButton(widgets.Button):
